@@ -257,11 +257,10 @@ function serializeRecording(id, rec) {
 
 // ==================== منطق ffmpeg ====================
 
-function buildFfmpegArgs(streamUrl, logo) {
+function buildFfmpegArgs(streamUrl, logo, outputPath) {
   const isHttp = /^https?:\/\//i.test(streamUrl);
   const args = ['-y'];
 
-  // إعادة اتصال تلقائية لو انقطع البث لحظيًا (يفيد HLS/DASH/MP4 عبر HTTP)
   if (isHttp) {
     args.push(
       '-reconnect', '1',
@@ -287,20 +286,15 @@ function buildFfmpegArgs(streamUrl, logo) {
       '-c:a', 'copy'
     );
   } else {
-    args.push('-c', 'copy'); // نسخ مباشر بدون إعادة ترميز = جودة أصلية وأداء خفيف
+    args.push('-c', 'copy');
   }
 
-  // fragmented mp4 عشان يصير قابل للبث على "pipe" (خرج غير قابل للـ seek) بدل ما يُكتب لملف على القرص
-  args.push(
-    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-    '-f', 'mp4',
-    'pipe:1'
-  );
+  args.push('-movflags', '+faststart', '-f', 'mp4', outputPath);
 
   return args;
 }
 
-/** بث HLS محلي مستمر (بدون حد زمني) — يقرأ المصدر مرة وحدة، يحط اللوقو مرة وحدة،
+/** بث HLS محلي مستمر (بدون حد زمني) — يقرأ المصدر مرة وحدة، يحط اللوقو مرة وحدة،/** بث HLS محلي مستمر (بدون حد زمني) — يقرأ المصدر مرة وحدة، يحط اللوقو مرة وحدة،
  *  ولو معطى rtmpUrl يدفع نفس البث بالتوازي (نفس الاتصال بالمصدر) لمنصة خارجية زي OK.RU */
 function buildLiveFfmpegArgs(streamUrl, hlsDir, logo, rtmpUrl) {
   const isHttp = /^https?:\/\//i.test(streamUrl);
@@ -414,59 +408,45 @@ function startLiveProcess(club, streamUrl, hlsDir, logo, rtmpUrl) {
 function startRecordingPipeline(id, rec, streamUrl, logo) {
   const key = `${rec.club}/${rec.matchName}.mp4`;
   rec.resultKey = key;
-  rec.tempFilePath = null; // ما فيه ملف محلي بعد الآن
+  rec.tempFilePath = path.join(TEMP_DIR, `rec_${id}.mp4`);
 
-  const args = buildFfmpegArgs(streamUrl, logo);
-  const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  const args = buildFfmpegArgs(streamUrl, logo, rec.tempFilePath);
+  const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'ignore', 'pipe'] });
 
   let stderrTail = '';
   proc.stderr.on('data', (chunk) => {
     stderrTail = (stderrTail + chunk.toString()).slice(-4000);
   });
   proc.getStderrTail = () => stderrTail;
-  proc.stdout.on('error', () => {}); // الخطأ يُتعامل معه من جهة الرفع (upload.done يرفض)
 
-  proc.stdout.on('data', (chunk) => {
-    rec.fileSizeBytes = (rec.fileSizeBytes || 0) + chunk.length;
-    rec.totalUploadBytes = rec.fileSizeBytes; // أفضل تقدير متاح أثناء التسجيل نفسه
-    rec.lastGrowthAt = Date.now();
-  });
-
-  const upload = new Upload({
-    client: b2,
-    params: {
-      Bucket: BUCKET,
-      Key: key,
-      Body: proc.stdout,
-      ContentType: 'video/mp4',
-    },
-    partSize: 8 * 1024 * 1024,
-    queueSize: 3,
-  });
-  upload.on('httpUploadProgress', (progress) => {
-    rec.uploadedBytes = progress.loaded || 0;
-  });
-  rec.uploadInstance = upload;
-  rec.uploadPromise = upload.done();
+  rec.sizeCheckInterval = setInterval(() => {
+    fs.stat(rec.tempFilePath, (err, stats) => {
+      if (!err) {
+        rec.fileSizeBytes = stats.size;
+        rec.lastGrowthAt = Date.now();
+      }
+    });
+  }, 3000);
 
   proc.on('error', (err) => {
     if (['error', 'done'].includes(rec.status)) return;
+    clearInterval(rec.sizeCheckInterval);
     rec.status = 'error';
     rec.errorMessage = `تعذر تشغيل ffmpeg: ${err.message}`;
-    if (rec.uploadInstance) rec.uploadInstance.abort().catch(() => {});
+    fs.unlink(rec.tempFilePath, () => {});
     notifyTelegram(`❌ <b>${rec.matchName}</b> (${CLUBS[rec.club]})\nتعذر تشغيل ffmpeg: ${err.message}`);
   });
 
   proc.on('close', (code) => {
-    if (['stopping', 'uploading', 'done', 'error'].includes(rec.status)) return; // نتعامل معه بمكان ثاني
+    clearInterval(rec.sizeCheckInterval);
+    if (['stopping', 'uploading', 'done', 'error'].includes(rec.status)) return;
     if (code !== 0) {
       rec.status = 'error';
       rec.errorMessage = `ffmpeg توقف بشكل غير متوقع (code ${code}). ${stderrTail.slice(-300)}`;
-      if (rec.uploadInstance) rec.uploadInstance.abort().catch(() => {});
+      fs.unlink(rec.tempFilePath, () => {});
       notifyTelegram(`❌ <b>${rec.matchName}</b> (${CLUBS[rec.club]})\nانقطع التسجيل: ${rec.errorMessage}`);
     } else {
-      // البث انتهى من طرف المصدر نفسه قبل أي إيقاف يدوي أو وقت مجدول — نكمّل الرفع تلقائيًا
-      notifyTelegram(`ℹ️ انتهى بث <b>${rec.matchName}</b> من طرف المصدر — جاري إكمال الرفع تلقائيًا`);
+      notifyTelegram(`ℹ️ انتهى بث <b>${rec.matchName}</b> من طرف المصدر — جاري رفع الملف لـ B2`);
       finalizeRecording(id).catch(() => {});
     }
   });
@@ -475,7 +455,7 @@ function startRecordingPipeline(id, rec, streamUrl, logo) {
   return proc;
 }
 
-/** يطبّق الحد الأقصى لمدة التسجيل (تلقائي أو مجدول) — حجم الملف ونشاطه يُتابعان مباشرة من stdout ffmpeg */
+/** يطبّق الحد الأقصى لمدة التسجيل (تلقائي أو مجدول) */
 function attachRecordingMonitor(id, rec) {
   let stopDelayMs = MAX_RECORDING_MS;
   if (rec.scheduledStop) {
@@ -491,7 +471,7 @@ function attachRecordingMonitor(id, rec) {
   }, stopDelayMs);
 }
 
-/** يبدأ التسجيل فعليًا الآن (يُستدعى فورًا أو من مؤقّت الجدولة) */
+/** يبدأ التسجيل فعليًا الآن (يُستدعى فورًا أو من مؤقّت الجدولة) *//** يبدأ التسجيل فعليًا الآن (يُستدعى فورًا أو من مؤقّت الجدولة) */
 function beginRecordingNow(id) {
   const rec = activeRecordings.get(id);
   if (!rec) return;
@@ -509,9 +489,8 @@ function beginRecordingNow(id) {
 async function finalizeRecording(id) {
   const rec = activeRecordings.get(id);
   if (!rec) return;
-  if (rec.status === 'uploading' || rec.status === 'done') return; // تم التعامل معه مسبقًا
+  if (rec.status === 'uploading' || rec.status === 'done') return;
 
-  // لو هذا التسجيل شوط مربوط ببث مباشر، نفك الربط فورًا عشان زر "ابدأ تسجيل" يرجع متاح
   if (rec.linkedLiveClub) {
     const live = activeLiveStreams.get(rec.linkedLiveClub);
     if (live && live.currentRecordingId === id) live.currentRecordingId = null;
@@ -521,12 +500,11 @@ async function finalizeRecording(id) {
 
   rec.status = 'stopping';
 
-  // ننتظر خروج ffmpeg فعليًا (إيقاف سليم يخلّي آخر جزء يوصل كامل للرفع)
   if (rec.process && rec.process.exitCode === null) {
     await new Promise((resolve) => {
       rec.process.once('close', resolve);
       try {
-        rec.process.stdin.write('q'); // إيقاف سليم يكتب نهاية الملف بدل قتل فجائي
+        rec.process.stdin.write('q');
       } catch (_) {
         rec.process.kill('SIGINT');
       }
@@ -536,21 +514,47 @@ async function finalizeRecording(id) {
     });
   }
 
-  if (!rec.fileSizeBytes) {
+  if (rec.sizeCheckInterval) clearInterval(rec.sizeCheckInterval);
+
+  let stats = null;
+  try {
+    stats = fs.statSync(rec.tempFilePath);
+  } catch (_) {
+    stats = null;
+  }
+
+  if (!stats || !stats.size) {
     rec.status = 'error';
     rec.errorMessage = 'لم يُنتج أي بيانات تسجيل — تأكد أن رابط البث صحيح ويعمل.';
-    if (rec.uploadInstance) rec.uploadInstance.abort().catch(() => {});
+    if (rec.tempFilePath) fs.unlink(rec.tempFilePath, () => {});
     notifyTelegram(`❌ <b>${rec.matchName}</b> (${CLUBS[rec.club]})\n${rec.errorMessage}`);
     if (rec.logoPath) fs.unlink(rec.logoPath, () => {});
     setTimeout(() => activeRecordings.delete(id), 15 * 60 * 1000);
     return;
   }
 
+  rec.fileSizeBytes = stats.size;
+  rec.totalUploadBytes = stats.size;
   rec.status = 'uploading';
 
   try {
-    // rec.uploadPromise بدأ من أول لحظة تسجيل، هنا فقط ننتظر آخر أجزاء الرفع تكتمل
-    await rec.uploadPromise;
+    const upload = new Upload({
+      client: b2,
+      params: {
+        Bucket: BUCKET,
+        Key: rec.resultKey,
+        Body: fs.createReadStream(rec.tempFilePath),
+        ContentType: 'video/mp4',
+      },
+      partSize: 8 * 1024 * 1024,
+      queueSize: 3,
+    });
+    upload.on('httpUploadProgress', (progress) => {
+      rec.uploadedBytes = progress.loaded || 0;
+    });
+    rec.uploadInstance = upload;
+    await upload.done();
+
     const publicUrl = await getSignedFileUrl(rec.resultKey);
     rec.status = 'done';
     rec.resultUrl = publicUrl;
@@ -563,14 +567,14 @@ async function finalizeRecording(id) {
     rec.errorMessage = `فشل الرفع لـ B2: ${err.message}`;
     notifyTelegram(`❌ فشل رفع <b>${rec.matchName}</b> (${CLUBS[rec.club]})\n${rec.errorMessage}`);
   } finally {
+    if (rec.tempFilePath) fs.unlink(rec.tempFilePath, () => {});
     if (rec.logoPath) fs.unlink(rec.logoPath, () => {});
   }
 
-  // نبقي السجل بالذاكرة شوي عشان الواجهة تقدر تقرأ النتيجة النهائية، بعدين ننظف
   setTimeout(() => activeRecordings.delete(id), 15 * 60 * 1000);
 }
 
-// ==================== تطبيق Express ====================
+// ==================== تطبيق Express ====================// ==================== تطبيق Express ====================
 
 const app = express();
 app.use(cors());
