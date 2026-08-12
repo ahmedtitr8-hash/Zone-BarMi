@@ -1,3 +1,12 @@
+---
+title: Zonelive
+emoji: 📡
+colorFrom: blue
+colorTo: red
+sdk: docker
+pinned: false
+---
+
 # أداة تسجيل البث (Stream Recorder)
 
 تسجيل من رابط بث مباشر (HLS/DASH/MP4/RTMP) عبر ffmpeg بجودة أصلية بدون إعادة ترميز، مع رفع تلقائي لـ Backblaze B2 وحفظ رابط دائم لكل مباراة، مقسّم على ناديين.
