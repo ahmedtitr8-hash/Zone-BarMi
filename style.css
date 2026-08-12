@@ -1,0 +1,172 @@
+:root {
+  --bg: #0f1115;
+  --card: #171a21;
+  --card-2: #1c2029;
+  --border: #262b35;
+  --text: #e9ecf1;
+  --muted: #8b93a3;
+  --accent: #4f7cff;
+  --danger: #ff4f5e;
+  --success: #2ecc71;
+  --warning: #f5a623;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 20px;
+}
+.wrap { max-width: 520px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 16px; text-align: center; }
+
+/* ---- شريط استهلاك B2 ---- */
+.storage-bar { margin-bottom: 18px; }
+.storage-bar .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.storage-track { height: 8px; border-radius: 999px; background: var(--card-2); overflow: hidden; border: 1px solid var(--border); }
+.storage-fill { height: 100%; background: var(--accent); transition: width .4s; }
+.storage-fill.warn { background: var(--warning); }
+.storage-fill.full { background: var(--danger); }
+
+/* ---- تبويبات ---- */
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.tab {
+  flex: 1; padding: 10px; text-align: center; border-radius: 10px;
+  background: var(--card); border: 1px solid var(--border);
+  cursor: pointer; font-weight: 600; color: var(--muted); font-size: 13px;
+}
+.tab.active { border-color: var(--accent); color: var(--accent); background: #171a2a; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px; margin-bottom: 16px;
+}
+label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
+input[type=text], input[type=url], input[type=datetime-local] {
+  width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: #0d0f14; color: var(--text); font-size: 14px; margin-bottom: 12px;
+}
+input:focus { outline: none; border-color: var(--accent); }
+
+/* ---- معاينة الفريم وموضع اللوقو ---- */
+.btn-preview, .btn-confirm-pos {
+  width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--accent);
+  background: transparent; color: var(--accent); font-size: 14px; font-weight: 700;
+  cursor: pointer; margin-bottom: 12px;
+}
+.btn-confirm-pos { border-color: var(--success); color: var(--success); }
+.btn-preview:disabled, .btn-confirm-pos:disabled { opacity: .5; cursor: not-allowed; }
+.upload-progress {
+  width: 100%; height: 8px; border-radius: 5px; background: #0d0f14;
+  overflow: hidden; margin-bottom: 6px; border: 1px solid var(--border);
+}
+.upload-progress-bar {
+  height: 100%; background: var(--accent); border-radius: 5px;
+  transition: width .4s ease;
+}
+.upload-progress-text { font-size: 12.5px; }
+.preview-box { margin-bottom: 4px; }
+.preview-frame {
+  position: relative; width: 100%; border-radius: 10px; overflow: hidden;
+  margin-bottom: 12px; border: 1px solid var(--border); line-height: 0;
+}
+.preview-frame img.f-preview-img, .preview-frame img.p-preview-img { width: 100%; display: block; }
+.logo-box {
+  position: absolute; border: 2px dashed var(--accent); touch-action: none;
+  cursor: move; background: rgba(79,124,255,.1);
+}
+.logo-box img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.resize-handle {
+  position: absolute; width: 18px; height: 18px; right: -9px; bottom: -9px;
+  background: var(--accent); border-radius: 50%; cursor: nwse-resize; touch-action: none;
+  border: 2px solid var(--bg);
+}
+input[type=file] {
+  width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+  background: #0d0f14; color: var(--text); font-size: 13px; margin-bottom: 12px;
+}
+input[type=file]:disabled { opacity: .5; }
+
+.schedule-toggle {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+  font-size: 13px; color: var(--muted); cursor: pointer; user-select: none;
+}
+.schedule-fields { display: none; }
+.schedule-fields.open { display: block; }
+
+.btn {
+  width: 100%; padding: 14px; border-radius: 10px; border: none;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.btn-start { background: var(--accent); color: white; }
+.btn-danger { background: var(--danger); color: white; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.live-status { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.live-badge {
+  display: inline-block; margin-bottom: 10px; padding: 5px 12px; border-radius: 20px;
+  background: rgba(255,79,94,.15); color: var(--danger); font-size: 13px; font-weight: 700;
+}
+.btn-rec-toggle { background: var(--success); color: #06210f; margin-top: 4px; }
+.btn-rec-toggle[data-recording="1"] { background: var(--danger); color: white; }
+
+.section-title { font-size: 14px; color: var(--muted); margin: 4px 0 10px; }
+
+/* ---- بطاقات التسجيلات الجارية/المجدولة ---- */
+.rec-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 10px;
+  background: var(--card-2);
+}
+.rec-card .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.rec-card .name { font-weight: 700; font-size: 14px; }
+.badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 700; }
+.badge.recording { background: rgba(255,79,94,.15); color: var(--danger); }
+.badge.scheduled { background: rgba(79,124,255,.15); color: var(--accent); }
+.badge.uploading { background: rgba(245,166,35,.15); color: var(--warning); }
+.badge.done { background: rgba(46,204,113,.15); color: var(--success); }
+.badge.error { background: rgba(255,79,94,.15); color: var(--danger); }
+.rec-card .meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.rec-card .meta.warn { color: var(--warning); }
+.rec-card .meta.err { color: var(--danger); }
+.rec-card button {
+  font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--danger);
+  background: transparent; color: var(--danger); cursor: pointer; font-weight: 600;
+}
+.rec-card button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- قائمة المحفوظات ---- */
+.rec-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px;
+}
+.rec-info { font-size: 13px; }
+.rec-name { font-weight: 600; margin-bottom: 3px; }
+.rec-meta { color: var(--muted); font-size: 12px; }
+.rec-actions { display: flex; gap: 8px; }
+.rec-actions a, .rec-actions button {
+  font-size: 12px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: #0d0f14; color: var(--text); text-decoration: none; cursor: pointer;
+}
+.rec-actions button.del { color: var(--danger); border-color: var(--danger); }
+
+.empty { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
+.toast { font-size: 13px; margin-top: 10px; color: var(--muted); }
+.toast.error { color: var(--danger); }
+.toast.ok { color: var(--success); }
+
+/* ---- تبويب النظرة العامة ---- */
+.overview-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px;
+  background: var(--card-2);
+}
+.overview-row .club-name { font-weight: 700; font-size: 14px; }
+.overview-row .state { font-size: 13px; }
+.overview-row .state.recording { color: var(--danger); }
+.overview-row .state.scheduled { color: var(--accent); }
+.overview-row .state.uploading { color: var(--warning); }
+.overview-row .state.idle { color: var(--muted); }
