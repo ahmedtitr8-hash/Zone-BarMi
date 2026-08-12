@@ -46,33 +46,47 @@ jobs:
           EOF
 
       - name: Start server
-        run: nohup npm start > server.log 2>&1 &
+        run: |
+          nohup npm start > server.log 2>&1 &
+          echo $! > server.pid
 
       - name: Wait for server
         run: sleep 5
 
-      - name: Download and configure ngrok
+      - name: Download cloudflared
         run: |
-          curl -sSL https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz -o ngrok.tgz
-          tar -xzf ngrok.tgz
-          ./ngrok config add-authtoken ${{ secrets.NGROK_AUTHTOKEN }}
+          curl -sSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
 
-      - name: Start ngrok tunnel
-        run: nohup ./ngrok http 3000 --log=stdout > ngrok.log 2>&1 &
-
-      - name: Wait for ngrok
-        run: sleep 8
-
-      - name: Get public URL and notify Telegram
+      - name: Start Cloudflare quick tunnel
         run: |
-          URL=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-          echo "Public URL: $URL"
+          nohup ./cloudflared tunnel --url http://localhost:3000 > cf.log 2>&1 &
+          echo $! > cf.pid
+
+      - name: Wait for tunnel URL
+        run: |
+          for i in $(seq 1 30); do
+            URL=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' cf.log | head -n1)
+            if [ -n "$URL" ]; then
+              echo "TUNNEL_URL=$URL" >> $GITHUB_ENV
+              echo "Found: $URL"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Notify Telegram
+        run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="رابط البث الجاهز الآن: $URL"
+            -d text="رابط البث الجاهز الآن: ${{ env.TUNNEL_URL }}"
 
       - name: Keep session alive
         run: |
           while true; do
+            if ! kill -0 $(cat server.pid) 2>/dev/null; then
+              echo "Server process died - exiting keep-alive loop."
+              break
+            fi
             sleep 60
           done
