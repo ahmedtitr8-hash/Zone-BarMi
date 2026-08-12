@@ -1,0 +1,78 @@
+name: Live Stream Relay
+
+on:
+  workflow_dispatch:
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create .env
+        run: |
+          cat > .env << EOF
+          PORT=3000
+          API_KEY=${{ secrets.API_KEY }}
+          CLUB1_NAME=${{ secrets.CLUB1_NAME }}
+          CLUB2_NAME=${{ secrets.CLUB2_NAME }}
+          B2_KEY_ID=${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY=${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET_NAME=${{ secrets.B2_BUCKET_NAME }}
+          B2_ENDPOINT=${{ secrets.B2_ENDPOINT }}
+          B2_REGION=${{ secrets.B2_REGION }}
+          SIGNED_URL_EXPIRY_DAYS=7
+          MAX_RECORDING_HOURS=5
+          MAX_CONCURRENT_RECORDINGS=2
+          B2_QUOTA_GB=10
+          TEMP_DIR=./temp
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_STATUS_INTERVAL_MINUTES=5
+          TELEGRAM_REMINDER_MINUTES_BEFORE=10
+          EOF
+
+      - name: Start server
+        run: nohup npm start > server.log 2>&1 &
+
+      - name: Wait for server
+        run: sleep 5
+
+      - name: Download and configure ngrok
+        run: |
+          curl -sSL https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz -o ngrok.tgz
+          tar -xzf ngrok.tgz
+          ./ngrok config add-authtoken ${{ secrets.NGROK_AUTHTOKEN }}
+
+      - name: Start ngrok tunnel
+        run: nohup ./ngrok http 3000 --log=stdout > ngrok.log 2>&1 &
+
+      - name: Wait for ngrok
+        run: sleep 8
+
+      - name: Get public URL and notify Telegram
+        run: |
+          URL=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          echo "Public URL: $URL"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="رابط البث الجاهز الآن: $URL"
+
+      - name: Keep session alive
+        run: |
+          while true; do
+            sleep 60
+          done
