@@ -278,7 +278,7 @@ function buildFfmpegArgs(streamUrl, logo, outputPath) {
     const y = Math.max(0, Math.round(logo.videoHeight * logo.yPct));
     args.push(
       '-i', logo.path,
-      '-filter_complex', `[1:v]scale=${w}:${h}[lg];[0:v][lg]overlay=${x}:${y}[vout]`,
+      '-filter_complex', `[0:v]scale=iw*sar:ih,setsar=1[base];[1:v]scale=${w}:${h}[lg];[base][lg]overlay=${x}:${y}[vout]`,
       '-map', '[vout]',
       '-map', '0:a?',
       '-c:v', 'libx264',
@@ -318,8 +318,8 @@ function buildLiveFfmpegArgs(streamUrl, hlsDir, logo, rtmpUrl) {
     const x = Math.max(0, Math.round(logo.videoWidth * logo.xPct));
     const y = Math.max(0, Math.round(logo.videoHeight * logo.yPct));
     const filterChain = needsSplit
-      ? `[1:v]scale=${w}:${h}[lg];[0:v][lg]overlay=${x}:${y}[ov];[ov]split=2[vout1][vout2]`
-      : `[1:v]scale=${w}:${h}[lg];[0:v][lg]overlay=${x}:${y}[vout1]`;
+      ? `[0:v]scale=iw*sar:ih,setsar=1[base];[1:v]scale=${w}:${h}[lg];[base][lg]overlay=${x}:${y}[ov];[ov]split=2[vout1][vout2]`
+      : `[0:v]scale=iw*sar:ih,setsar=1[base];[1:v]scale=${w}:${h}[lg];[base][lg]overlay=${x}:${y}[vout1]`;
     args.push('-i', logo.path, '-filter_complex', filterChain);
   }
 
@@ -621,7 +621,8 @@ app.post('/api/preview/frame', requireApiKey, async (req, res) => {
     ];
     const { stderr } = await runWithTimeout('ffmpeg', frameArgs, PREVIEW_TIMEOUT_MS);
 
-    const dimMatch = stderr.match(/Video:.*?(\d{2,5})x(\d{2,5})/);
+    const outputSection = stderr.split('Output #0')[1] || stderr;
+    const dimMatch = outputSection.match(/Video:.*?(\d{2,5})x(\d{2,5})/);
     const width = dimMatch ? parseInt(dimMatch[1], 10) : null;
     const height = dimMatch ? parseInt(dimMatch[2], 10) : null;
 
