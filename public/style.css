@@ -79,7 +79,7 @@ input:focus { outline: none; border-color: var(--accent); }
   position: absolute; border: 2px dashed var(--accent); touch-action: none;
   cursor: move; background: rgba(79,124,255,.1);
 }
-.logo-box img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.logo-box img { width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
 .resize-handle {
   position: absolute; width: 18px; height: 18px; right: -9px; bottom: -9px;
   background: var(--accent); border-radius: 50%; cursor: nwse-resize; touch-action: none;
