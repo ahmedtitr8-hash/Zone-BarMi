@@ -1,0 +1,14 @@
+# متغيرات البيئة والأسرار
+.env
+.env.local
+.env.*.local
+
+# اعتمادات Node
+node_modules/
+
+# ملفات مؤقتة
+temp/
+*.log
+
+# ملفات النظام
+.DS_Store
