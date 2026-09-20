@@ -1,4 +1,7 @@
 {
   "panelUrl": "https://stadium-broader-equally-slight.trycloudflare.com",
-  "startedAt": "2026-09-20T17:38:25Z"
+  "startedAt": "2026-09-20T17:38:25Z",
+  "multiQuality": {
+    "Milan": "https://dist-apnic-rehabilitation-afternoon.trycloudflare.com/master.m3u8"
+  }
 }
