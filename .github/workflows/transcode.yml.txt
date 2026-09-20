@@ -1,0 +1,196 @@
+name: transcode
+
+# يُشغَّل يدويًا: تفتح تبويب Actions بمشروع الميني اب وتضغط "Run workflow"، وتحط رابط
+# البث اللي وصلك من أداة التسجيل (رابط الـ stream.m3u8 كامل، مو رابط النفق وحده).
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: "رابط بث أداة التسجيل الكامل (ينتهي بـ /live/<club>/stream.m3u8)"
+        required: true
+      match_label:
+        description: "اسم المباراة (يظهر برسالة تيليجرام بس)"
+        required: false
+        default: "بث مباشر"
+      quality_720:
+        description: "أضف جودة 720p (يُتجاهل تلقائيًا لو المصدر أصلًا أقل من 720)"
+        type: boolean
+        default: false
+      quality_480:
+        description: "أضف جودة 480p"
+        type: boolean
+        default: true
+      quality_360:
+        description: "أضف جودة 360p"
+        type: boolean
+        default: false
+
+jobs:
+  transcode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340 # نفس حد GitHub الأقصى تقريبًا لأي مهمة وحدة (لا يوجد طريقة لتجاوزه)
+    steps:
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Prepare output directory
+        run: mkdir -p hls_out
+
+      - name: Start local static file server
+        # يخدّم مخرجات الترميز (hls_out) كملفات ثابتة عادية — نفس مبدأ express.static
+        # بمشروع التسجيل، بس هنا أبسط (سيرفر Python المدمج، صفر تبعيات إضافية)
+        run: |
+          cd hls_out
+          nohup python3 -m http.server 8090 > /tmp/httpserver.log 2>&1 &
+          sleep 2
+
+      - name: Download cloudflared
+        run: |
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+
+      - name: Start Cloudflare quick tunnel
+        run: |
+          nohup ./cloudflared tunnel --url http://localhost:8090 > /tmp/cloudflared.log 2>&1 &
+          echo $! > /tmp/cloudflared.pid
+
+      - name: Wait for tunnel URL
+        id: tunnel
+        run: |
+          URL=""
+          for i in $(seq 1 30); do
+            URL=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n1 || true)
+            if [ -n "$URL" ]; then break; fi
+            sleep 1
+          done
+          if [ -z "$URL" ]; then
+            echo "::error::تعذر الحصول على رابط النفق"
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram (stream link)
+        run: |
+          MASTER_URL="${{ steps.tunnel.outputs.url }}/master.m3u8"
+          TEXT=$'🎛 رابط تعدد الجودات جاهز — ${{ github.event.inputs.match_label }}\n'"$MASTER_URL"$'\nانسخه وحطه بأدمن الميني اب بدل رابط أداة التسجيل مباشرة.\n\nلإيقافه يدويًا وقت ما تبي:\ncurl -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/ahmedtitr8-hash/milan-mini-app/actions/runs/'"${{ github.run_id }}"$'/cancel'
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode=HTML \
+            --data-urlencode "text=$TEXT"
+
+      - name: Transcode (self-healing, two independent processes)
+        # مهم: نفصل "الأصلية" (نسخ مباشر) عن "الجودات الإضافية" (ترميز) بعمليتين
+        # مستقلتين تمامًا — خلطهم بأمر واحد كان يسبب اختفاء الأصلية من القائمة بشكل
+        # متكرر (خلل معروف بمازج ffmpeg بين النسخ المباشر والفلاتر بنفس القائمة).
+        # نبني master.m3u8 بأنفسنا يدويًا بدل ما نعتمد على ffmpeg يبنيه.
+        run: |
+          set +e
+          SOURCE="${{ github.event.inputs.source_url }}"
+          mkdir -p hls_out/original
+
+          HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$SOURCE" 2>/dev/null | head -n1)
+          WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$SOURCE" 2>/dev/null | head -n1)
+          echo "الدقة المكتشفة بالمصدر: ${WIDTH:-?}x${HEIGHT:-?}"
+
+          NEEDED=()
+          check_needed () {
+            local RES_H=$1
+            if [ -n "$HEIGHT" ] && [ "$HEIGHT" -le "$RES_H" ] 2>/dev/null; then
+              echo "تجاهلنا ${RES_H}p لأن المصدر أصلًا ${HEIGHT}p (ما نكبّر جودة)."
+              return
+            fi
+            NEEDED+=("$RES_H")
+          }
+          [ "${{ github.event.inputs.quality_720 }}" = "true" ] && check_needed 720
+          [ "${{ github.event.inputs.quality_480 }}" = "true" ] && check_needed 480
+          [ "${{ github.event.inputs.quality_360 }}" = "true" ] && check_needed 360
+
+          FILTER=""
+          MAP_ARGS=()
+          MASTER_LINES="#EXTM3U"$'\n'"#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=${WIDTH:-1920}x${HEIGHT:-1080}"$'\n'"original/index.m3u8"
+          PREV_LABEL="0:v"
+          IDX=0
+          declare -A BR=([720]="2000k" [480]="900k" [360]="600k")
+          declare -A BW=([720]=2200000 [480]=990000 [360]=660000)
+          declare -A RW=([720]=1280 [480]=854 [360]=640)
+
+          COUNT=${#NEEDED[@]}
+          for i in "${!NEEDED[@]}"; do
+            RES_H="${NEEDED[$i]}"
+            OUT_LABEL="v${IDX}out"
+            IS_LAST=$([ "$i" -eq $((COUNT-1)) ] && echo 1 || echo 0)
+            if [ "$IS_LAST" = "1" ]; then
+              STAGE="[${PREV_LABEL}]scale=-2:${RES_H}[${OUT_LABEL}]"
+            else
+              NEXT_LABEL="c${IDX}"
+              STAGE="[${PREV_LABEL}]scale=-2:${RES_H},split=2[${OUT_LABEL}][${NEXT_LABEL}]"
+            fi
+            if [ -z "$FILTER" ]; then FILTER="$STAGE"; else FILTER="${FILTER};${STAGE}"; fi
+            MAP_ARGS+=(-map "[${OUT_LABEL}]" -map 0:a -c:v:${IDX} libx264 -preset ultrafast -tune zerolatency -b:v:${IDX} "${BR[$RES_H]}" -c:a:${IDX} copy)
+            mkdir -p "hls_out/q${IDX}"
+            MASTER_LINES="${MASTER_LINES}"$'\n'"#EXT-X-STREAM-INF:BANDWIDTH=${BW[$RES_H]},RESOLUTION=${RW[$RES_H]}x${RES_H}"$'\n'"q${IDX}/index.m3u8"
+            [ "$IS_LAST" != "1" ] && PREV_LABEL="${NEXT_LABEL}"
+            IDX=$((IDX+1))
+          done
+
+          echo "$MASTER_LINES" > hls_out/master.m3u8
+          echo "=== master.m3u8 المبني يدويًا ==="
+          cat hls_out/master.m3u8
+
+          END_TIME=$((SECONDS + 320*60))
+
+          run_original () {
+            local ATTEMPT=0
+            while [ $SECONDS -lt $END_TIME ]; do
+              ATTEMPT=$((ATTEMPT+1))
+              echo "[original] محاولة رقم $ATTEMPT"
+              ffmpeg -y -re -fflags nobuffer -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+                -i "$SOURCE" -map 0:v -map 0:a -c:v copy -c:a copy \
+                -f hls -hls_time 2 -hls_list_size 5 -hls_flags delete_segments+independent_segments+append_list \
+                -hls_segment_filename "hls_out/original/seg_%05d.ts" \
+                "hls_out/original/index.m3u8" \
+                2>> /tmp/ffmpeg_original.log
+              echo "[original] انتهى بكود $? — آخر أسطر:"
+              tail -n 15 /tmp/ffmpeg_original.log
+              [ $SECONDS -ge $END_TIME ] && break
+              sleep 5
+            done
+          }
+
+          run_qualities () {
+            if [ -z "$FILTER" ]; then
+              echo "ما فيه جودات إضافية محددة — بس الأصلية تشتغل."
+              return
+            fi
+            local ATTEMPT=0
+            while [ $SECONDS -lt $END_TIME ]; do
+              ATTEMPT=$((ATTEMPT+1))
+              echo "[qualities] محاولة رقم $ATTEMPT"
+              ffmpeg -y -re -fflags nobuffer -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+                -i "$SOURCE" -filter_complex "$FILTER" "${MAP_ARGS[@]}" \
+                -force_key_frames "expr:gte(t,n_forced*2)" \
+                -f hls -hls_time 2 -hls_list_size 5 -hls_flags delete_segments+independent_segments+append_list \
+                -var_stream_map "$(IFS=' '; i=0; for r in "${NEEDED[@]}"; do echo -n "v:${i},a:${i},name:${r}p "; i=$((i+1)); done)" \
+                -hls_segment_filename "hls_out/q%v/seg_%05d.ts" \
+                "hls_out/q%v/index.m3u8" \
+                2>> /tmp/ffmpeg_qualities.log
+              echo "[qualities] انتهى بكود $? — آخر أسطر:"
+              tail -n 15 /tmp/ffmpeg_qualities.log
+              [ $SECONDS -ge $END_TIME ] && break
+              sleep 5
+            done
+          }
+
+          run_original &
+          PID1=$!
+          run_qualities &
+          PID2=$!
+          wait $PID1
+          wait $PID2
+
+      - name: Notify Telegram (ended)
+        if: always()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⏹ انتهى تعدد الجودات — ${{ github.event.inputs.match_label }}"
