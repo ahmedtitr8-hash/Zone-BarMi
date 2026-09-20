@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>لوحة التحكم — Zone BarMi</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23ff453a%22 stroke-width=%222.2%22><path d=%22M23 7l-7 5 7 5V7z%22/><rect x=%221%22 y=%225%22 width=%2215%22 height=%2214%22 rx=%222%22/></svg>">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#08080b;
+    --bg-grad: radial-gradient(1200px 600px at 50% -10%, #1a0f10 0%, #08080b 55%);
+    --card: rgba(255,255,255,0.035);
+    --card-border: rgba(255,255,255,0.08);
+    --card-hover: rgba(255,255,255,0.05);
+    --text:#f2f2f4; --muted:#8b8b96; --muted2:#5f5f6a;
+    --accent:#ff453a; --accent2:#ff7a6e; --accent-glow: rgba(255,69,58,0.35);
+    --green:#30d158; --green-bg: rgba(48,209,88,0.12); --green-border: rgba(48,209,88,0.35);
+    --red-bg: rgba(255,69,58,0.10); --red-border: rgba(255,69,58,0.35);
+    --radius:16px; --radius-sm:11px;
+    --shadow: 0 8px 30px rgba(0,0,0,0.35);
+  }
+  *{box-sizing:border-box}
+  ::selection{background:var(--accent);color:#fff}
+  body{
+    background:var(--bg-grad), var(--bg);
+    background-attachment: fixed;
+    color:var(--text);
+    font-family:'IBM Plex Sans Arabic',-apple-system,'Segoe UI',Tahoma,sans-serif;
+    margin:0; padding:0 14px 60px;
+    min-height:100vh;
+  }
+
+  .topbar{
+    position:sticky; top:0;
+    background:linear-gradient(180deg, var(--bg) 65%, transparent);
+    padding:20px 0 14px; margin-bottom:4px;
+    display:flex; align-items:center; justify-content:space-between;
+    z-index:10; backdrop-filter:blur(10px);
+  }
+  .brand{display:flex; align-items:center; gap:10px}
+  .brand-icon{
+    width:34px; height:34px; border-radius:10px;
+    background:linear-gradient(135deg, var(--accent), #b3261e);
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+    box-shadow:0 4px 14px var(--accent-glow);
+  }
+  h1{margin:0; font-size:17px; font-weight:800; letter-spacing:-0.2px}
+  h1 span{display:block; font-size:11px; font-weight:500; color:var(--muted2); margin-top:1px}
+
+  #badge{
+    padding:7px 14px; border-radius:24px; font-size:12px; font-weight:700;
+    white-space:nowrap; transition:.25s; display:flex; align-items:center; gap:6px;
+  }
+  #badge::before{content:''; width:7px; height:7px; border-radius:50%; flex-shrink:0}
+  .badge-on{background:var(--green-bg); color:var(--green); box-shadow:0 0 0 1px var(--green-border) inset}
+  .badge-on::before{background:var(--green); box-shadow:0 0 0 4px rgba(48,209,88,0.18); animation:pulse 1.8s ease-in-out infinite}
+  .badge-off{background:rgba(139,139,150,0.1); color:var(--muted); box-shadow:0 0 0 1px rgba(255,255,255,0.08) inset}
+  .badge-off::before{background:var(--muted2)}
+  .badge-unknown{background:rgba(139,139,150,0.08); color:var(--muted2)}
+  .badge-unknown::before{background:var(--muted2); animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1; transform:scale(1)}50%{opacity:.4; transform:scale(1.3)}}
+
+  .slotbar{
+    max-width:640px; margin:0 auto 16px; display:flex; gap:10px; align-items:center;
+    background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius-sm);
+    padding:10px 14px;
+  }
+  .slotbar label{font-size:12.5px; color:var(--muted); white-space:nowrap; font-weight:600}
+  .slotbar input{background:transparent; border:0; padding:2px 0; font-weight:700; font-size:15px}
+  .slotbar input:focus{outline:none}
+
+  .tabs{
+    max-width:640px; margin:0 auto 18px; display:flex; gap:4px;
+    background:var(--card); border:1px solid var(--card-border);
+    border-radius:14px; padding:5px;
+  }
+  .tab{
+    flex:1; text-align:center; padding:11px 4px; border-radius:10px;
+    font-size:13.5px; font-weight:700; cursor:pointer; color:var(--muted);
+    transition:.2s; user-select:none;
+  }
+  .tab:active{transform:scale(.97)}
+  .tab.active{
+    background:linear-gradient(135deg, var(--accent), #c9302a);
+    color:#fff; box-shadow:0 4px 16px var(--accent-glow);
+  }
+
+  .panel{display:none; max-width:640px; margin:0 auto; animation:fadeIn .25s ease}
+  .panel.active{display:block}
+  @keyframes fadeIn{from{opacity:0; transform:translateY(4px)}to{opacity:1; transform:translateY(0)}}
+
+  .card{
+    background:var(--card); border:1px solid var(--card-border);
+    border-radius:var(--radius); padding:18px; margin-bottom:14px;
+    box-shadow:var(--shadow);
+  }
+  .card h3{
+    margin:0 0 14px; font-size:14.5px; color:var(--text); font-weight:700;
+    display:flex; align-items:center; gap:8px;
+  }
+  .card-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px}
+  .card-head h3{margin:0}
+
+  label.f{display:block; font-size:12px; color:var(--muted); margin:14px 0 6px; font-weight:600}
+  label.f:first-of-type{margin-top:0}
+
+  input,select{
+    width:100%; padding:12px 13px; border-radius:var(--radius-sm);
+    border:1px solid var(--card-border); background:rgba(0,0,0,0.25); color:var(--text);
+    font-size:14px; font-family:inherit; transition:.15s;
+  }
+  input::placeholder{color:var(--muted2)}
+  input:focus, select:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow)}
+
+  .row{display:flex; gap:10px}
+  .row > *{flex:1}
+  .chk{
+    display:flex; align-items:center; gap:9px; font-size:13.5px; color:#ccc;
+    margin-top:9px; cursor:pointer; user-select:none;
+  }
+  .chk input{width:17px; height:17px; accent-color:var(--accent); cursor:pointer}
+
+  button{
+    background:linear-gradient(135deg, var(--accent), #c9302a); color:#fff; border:0;
+    padding:13px 18px; border-radius:var(--radius-sm); font-size:14px; font-weight:700;
+    cursor:pointer; margin-top:16px; width:100%; transition:.15s;
+    box-shadow:0 4px 14px var(--accent-glow);
+    font-family:inherit;
+  }
+  button:active{transform:scale(.97)}
+  button:disabled{opacity:.55; cursor:not-allowed; transform:none}
+  .spinner{
+    display:inline-block; width:15px; height:15px; border-radius:50%;
+    border:2px solid rgba(255,255,255,0.35); border-top-color:#fff;
+    animation:spin .7s linear infinite; vertical-align:middle;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  button.secondary{background:var(--card); color:#ddd; box-shadow:none; border:1px solid var(--card-border)}
+  button.danger{background:var(--red-bg); color:var(--accent2); box-shadow:none; border:1px solid var(--red-border)}
+  button.small{width:auto; margin:0; padding:7px 13px; font-size:12px; border-radius:8px}
+  button.ghost{background:transparent; box-shadow:none; border:1px solid var(--card-border); color:#ccc}
+
+  #resultBox{
+    max-width:640px; margin:0 auto 16px; padding:15px 16px; border-radius:var(--radius);
+    background:var(--green-bg); border:1px solid var(--green-border); display:none;
+    font-size:13.5px; word-break:break-all; line-height:1.7; animation:fadeIn .2s ease;
+  }
+  #resultBox.err{background:var(--red-bg); border-color:var(--red-border)}
+  .link-line{
+    display:block; background:rgba(0,0,0,0.35); padding:9px 11px; border-radius:9px;
+    margin:8px 0; font-size:12px; direction:ltr; text-align:left; font-family:monospace;
+    border:1px solid var(--card-border);
+  }
+
+  .item{
+    display:flex; justify-content:space-between; align-items:center; padding:12px 0;
+    border-top:1px solid var(--card-border); font-size:13.5px; gap:8px;
+  }
+  .item:first-child{border-top:none; padding-top:2px}
+  .item .meta{color:var(--muted2); font-size:11px; margin-top:2px}
+  .pill{padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:700; background:rgba(255,255,255,0.06); color:#aaa}
+  .pill.live{background:var(--green-bg); color:var(--green)}
+  .pill.pill-rec{background:var(--red-bg); color:var(--accent2)}
+  .pill.pill-rec::before{content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); margin-left:5px; animation:pulse 1.4s ease-in-out infinite}
+
+  .ic{width:16px; height:16px; vertical-align:-3px; margin-left:4px; flex-shrink:0}
+  h1 .ic, .brand-icon svg{margin:0}
+  h3 .ic{width:17px; height:17px}
+  .tab .ic{width:15px; height:15px}
+  button .ic{width:15px; height:15px}
+  .hint .ic{width:14px; height:14px}
+
+  .storage-track{height:9px; background:rgba(255,255,255,0.06); border-radius:6px; overflow:hidden; margin-top:10px}
+  .storage-fill{height:100%; background:linear-gradient(90deg, var(--accent), var(--accent2)); transition:.5s ease; border-radius:6px}
+  .hint{font-size:11.5px; color:var(--muted2); margin-top:10px; line-height:1.7}
+  .empty{text-align:center; color:var(--muted2); padding:26px 10px; font-size:13px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+    </div>
+    <h1>لوحة التحكم<span>Zone BarMi</span></h1>
+  </div>
+  <span id="badge" class="badge-unknown">جاري التحقق...</span>
+</div>
+
+<div class="slotbar">
+  <label><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg> اسم البث</label>
+  <input id="slot" placeholder="مثال: fifa" oninput="onSlotChange()">
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="live" onclick="switchTab('live')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.9 19.1a10 10 0 010-14.2M2 22a14 14 0 010-20M19.1 4.9a10 10 0 010 14.2M22 2a14 14 0 010 20"/><circle cx="12" cy="12" r="2.5"/></svg> بث مباشر</div>
+  <div class="tab" data-tab="rec" onclick="switchTab('rec')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg> تسجيل</div>
+  <div class="tab" data-tab="lib" onclick="switchTab('lib')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg> مكتبة</div>
+</div>
+
+<div id="resultBox"></div>
+
+<!-- ===================== تبويب: بث مباشر ===================== -->
+<div class="panel active" id="panel-live">
+  <div class="card">
+    <h3><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/></svg> بدء / إيقاف بث مباشر</h3>
+    <label class="f">رابط المصدر (أي نوع: m3u8, ts, Xtream...)</label>
+    <input id="liveUrl" placeholder="https://...">
+
+    <label class="f">رابط RTMP خارجي (اختياري — OK.RU / Livepush)</label>
+    <input id="okruUrl" placeholder="rtmp://...">
+
+    <label class="chk"><input type="checkbox" id="q720">جودة 720p</label>
+    <label class="chk"><input type="checkbox" id="q480">جودة 480p</label>
+    <label class="chk"><input type="checkbox" id="q360">جودة 360p</label>
+
+    <label class="f">مفتاح API</label>
+    <input id="apiKey" type="password" placeholder="نفس API_KEY بسر GitHub">
+
+    <div class="row">
+      <button onclick="startLive(this)"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8V4z"/></svg> بدء البث</button>
+      <button class="danger" onclick="stopLive(this)"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> إيقاف</button>
+    </div>
+    <div class="hint"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg> لازم الأكشن يكون شغّال أول (شغّله من تبويب Actions بـGitHub وانتظر شوي).</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20a9 9 0 0114 0M8.5 16.5a5 5 0 017 0M12 20h.01"/></svg> كل البثوث الشغّالة</h3>
+      <button class="ghost small" onclick="refreshLiveStatus()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0114.5-4.5L23 9M20.5 15a9 9 0 01-14.5 4.5L1 15"/></svg> تحديث</button>
+    </div>
+    <div id="liveList" class="empty">جاري التحقق...</div>
+  </div>
+</div>
+
+<!-- ===================== تبويب: تسجيل ===================== -->
+<div class="panel" id="panel-rec">
+  <div class="card">
+    <h3><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg> تسجيل شوط من البث الحالي</h3>
+    <label class="f">اسم الشوط (اختياري)</label>
+    <input id="segName" placeholder="مثال: الشوط الأول">
+    <div class="row">
+      <button onclick="startLiveRecording(this)"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg> ابدأ تسجيل الشوط</button>
+      <button class="danger" onclick="stopLiveRecording(this)"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> إيقاف ورفع</button>
+    </div>
+    <div class="hint"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg> لازم يكون فيه بث مباشر شغّال بنفس "اسم البث" فوق.</div>
+  </div>
+
+  <div class="card">
+    <h3><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg> تسجيل مستقل (بدون بث مباشر)</h3>
+    <label class="f">رابط المصدر</label>
+    <input id="recUrl" placeholder="https://...">
+    <label class="f">اسم التسجيل</label>
+    <input id="recName" placeholder="مثال: مباراة الأمس">
+    <button onclick="startStandaloneRecording(this)"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg> ابدأ التسجيل</button>
+  </div>
+</div>
+
+<!-- ===================== تبويب: مكتبة ===================== -->
+<div class="panel" id="panel-lib">
+  <div class="card">
+    <div class="card-head">
+      <h3><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg> التسجيلات المرفوعة</h3>
+      <button class="ghost small" onclick="refreshRecordings()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0114.5-4.5L23 9M20.5 15a9 9 0 01-14.5 4.5L1 15"/></svg> تحديث</button>
+    </div>
+    <div id="recList" class="empty">اضغط تحديث لعرض التسجيلات</div>
+  </div>
+
+  <div class="card">
+    <h3><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg> مساحة التخزين</h3>
+    <div id="storageText" class="hint">اضغط تحديث</div>
+    <div class="storage-track"><div class="storage-fill" id="storageFill" style="width:0%"></div></div>
+    <button class="secondary" onclick="refreshStorage()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0114.5-4.5L23 9M20.5 15a9 9 0 01-14.5 4.5L1 15"/></svg> تحديث المساحة</button>
+  </div>
+</div>
+
+<script>
+const OWNER = 'ahmedtitr8-hash';
+const REPO  = 'Zone-BarMi';
+const WORKFLOW_FILE = 'live-relay.yml';
+const WORKER_URL = 'https://zone-barmi.ahmedtitr8.workers.dev';
+
+const badge = document.getElementById('badge');
+const resultBox = document.getElementById('resultBox');
+const apiKeyInput = document.getElementById('apiKey');
+const slotInput = document.getElementById('slot');
+
+apiKeyInput.value = localStorage.getItem('zbm_api_key') || '';
+apiKeyInput.addEventListener('change', () => localStorage.setItem('zbm_api_key', apiKeyInput.value));
+slotInput.value = localStorage.getItem('zbm_slot') || '';
+function onSlotChange(){ localStorage.setItem('zbm_slot', slotInput.value.trim()); }
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+}
+
+function getSlot(){
+  const s = slotInput.value.trim();
+  return /^[a-zA-Z0-9_-]{1,40}$/.test(s) ? s : null;
+}
+function getKey(){ return apiKeyInput.value.trim(); }
+
+function showResult(ok, html){
+  resultBox.style.display = 'block';
+  resultBox.className = ok ? '' : 'err';
+  resultBox.innerHTML = html;
+}
+
+async function withBtn(btn, fn){
+  if (!btn) return fn();
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try { await fn(); }
+  finally { btn.disabled = false; btn.innerHTML = original; }
+}
+
+async function checkActionStatus(){
+  try{
+    const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?status=in_progress&per_page=5`);
+    if(!res.ok) throw 0;
+    const data = await res.json();
+    const running = (data.workflow_runs || []).some(r => r.path.endsWith(WORKFLOW_FILE));
+    badge.textContent = running ? 'الأكشن شغّال' : 'متوقف';
+    badge.className = running ? 'badge-on' : 'badge-off';
+  }catch(e){
+    badge.textContent = 'تعذّر التحقق';
+    badge.className = 'badge-unknown';
+  }
+}
+
+async function getPanelUrl(){
+  const res = await fetch('./current-stream.json?_=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error('الأكشن مو شغّال، أو لسا ما جهز النفق. شغّله وانتظر دقيقة.');
+  const data = await res.json();
+  const ageMinutes = (Date.now() - new Date(data.startedAt).getTime()) / 60000;
+  if (ageMinutes > 360) throw new Error('آخر جلسة قديمة، شغّل الأكشن من جديد.');
+  return data.panelUrl;
+}
+
+async function apiCall(path, opts = {}){
+  const key = getKey();
+  if (!key) throw new Error('حط مفتاح الـ API أول.');
+  const panelUrl = await getPanelUrl();
+  const res = await fetch(panelUrl + path, {
+    ...opts,
+    headers: { 'x-api-key': key, ...(opts.headers || {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('خطأ ' + res.status));
+  return { data, panelUrl };
+}
+
+// ---------------- بث مباشر ----------------
+async function startLive(btn){
+  const slot = getSlot();
+  const url = document.getElementById('liveUrl').value.trim();
+  if (!slot) return showResult(false, 'حط اسم بث صالح فوق (حروف/أرقام/شرطة).');
+  if (!url) return showResult(false, 'حط رابط المصدر.');
+
+  await withBtn(btn, async () => {
+  try{
+    const form = new FormData();
+    form.append('club', slot);
+    form.append('url', url);
+    const okru = document.getElementById('okruUrl').value.trim();
+    if (okru) form.append('okruUrl', okru);
+    form.append('quality720', document.getElementById('q720').checked ? 'true' : 'false');
+    form.append('quality480', document.getElementById('q480').checked ? 'true' : 'false');
+    form.append('quality360', document.getElementById('q360').checked ? 'true' : 'false');
+
+    const { data } = await apiCall('/api/live/start', { method: 'POST', body: form });
+    const permanentLink = `${WORKER_URL}/${slot}`;
+    showResult(true, `
+      تم — اشتغل البث "${slot}"!<br>
+      <b>الرابط الثابت:</b>
+      <span class="link-line">${permanentLink}</span>
+      <button class="small ghost" onclick="navigator.clipboard.writeText('${permanentLink}')">نسخ</button>
+      ${data.pushingToOkru ? '<div class="hint">يبث بالتوازي على الرابط الخارجي.</div>' : ''}
+    `);
+    refreshLiveStatus();
+  }catch(e){ showResult(false, e.message); }
+  });
+}
+
+async function stopLive(btn){
+  const slot = getSlot();
+  if (!slot) return showResult(false, 'حط اسم البث فوق.');
+  await withBtn(btn, async () => {
+  try{
+    await apiCall('/api/live/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ club: slot }),
+    });
+    showResult(true, `تم إيقاف "${slot}".`);
+    refreshLiveStatus();
+  }catch(e){ showResult(false, e.message); }
+  });
+}
+
+async function refreshLiveStatus(){
+  const listEl = document.getElementById('liveList');
+  if (!getKey()) { listEl.textContent = 'حط مفتاح الـ API أول.'; return; }
+  try{
+    const { data } = await apiCall('/api/live/status');
+    const entries = Object.entries(data.live || {});
+    if (!entries.length){ listEl.innerHTML = '<div class="empty">ما فيه بث شغّال حالياً.</div>'; return; }
+    listEl.innerHTML = entries.map(([slot, info]) => `
+      <div class="item">
+        <span>${slot} <span class="pill live">${info.pushingToOkru ? 'بث + خارجي' : 'بث'}</span>${info.recording ? ' <span class="pill pill-rec">تسجيل</span>' : ''}</span>
+        <button class="small danger" onclick="quickStop('${slot}')">إيقاف</button>
+      </div>`).join('');
+  }catch(e){
+    listEl.innerHTML = `<div class="empty">${e.message}</div>`;
+  }
+}
+async function quickStop(slot){
+  try{
+    await apiCall('/api/live/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ club: slot }),
+    });
+    refreshLiveStatus();
+  }catch(e){ showResult(false, e.message); }
+}
+
+// ---------------- تسجيل ----------------
+async function startLiveRecording(btn){
+  const slot = getSlot();
+  if (!slot) return showResult(false, 'حط اسم البث فوق.');
+  await withBtn(btn, async () => {
+  try{
+    const form = new FormData();
+    const name = document.getElementById('segName').value.trim();
+    if (name) form.append('matchName', name);
+    await apiCall('/api/live/recording/start', { method: 'POST', body: form });
+    showResult(true, 'بدأ تسجيل الشوط.');
+  }catch(e){ showResult(false, e.message); }
+  });
+}
+async function stopLiveRecording(btn){
+  const slot = getSlot();
+  if (!slot) return showResult(false, 'حط اسم البث فوق.');
+  await withBtn(btn, async () => {
+  try{
+    await apiCall('/api/live/recording/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ club: slot }),
+    });
+    showResult(true, 'تم إيقاف التسجيل ورفعه.');
+  }catch(e){ showResult(false, e.message); }
+  });
+}
+
+async function startStandaloneRecording(btn){
+  const slot = getSlot();
+  const url = document.getElementById('recUrl').value.trim();
+  const name = document.getElementById('recName').value.trim();
+  if (!slot) return showResult(false, 'حط اسم فوق (يُستخدم كمجلد التسجيل).');
+  if (!url) return showResult(false, 'حط رابط المصدر.');
+  await withBtn(btn, async () => {
+  try{
+    const form = new FormData();
+    form.append('club', slot);
+    form.append('url', url);
+    if (name) form.append('matchName', name);
+    await apiCall('/api/record/start', { method: 'POST', body: form });
+    showResult(true, 'بدأ التسجيل المستقل.');
+  }catch(e){ showResult(false, e.message); }
+  });
+}
+
+// ---------------- مكتبة ----------------
+async function refreshRecordings(){
+  const slot = getSlot();
+  const listEl = document.getElementById('recList');
+  if (!slot){ listEl.innerHTML = '<div class="empty">حط اسم البث فوق أول.</div>'; return; }
+  if (!getKey()){ listEl.innerHTML = '<div class="empty">حط مفتاح الـ API أول.</div>'; return; }
+  listEl.innerHTML = '<div class="empty">جاري التحميل...</div>';
+  try{
+    const { data } = await apiCall(`/api/recordings/${encodeURIComponent(slot)}`);
+    const items = data.recordings || [];
+    if (!items.length){ listEl.innerHTML = '<div class="empty">ما فيه تسجيلات لهذا الاسم.</div>'; return; }
+    listEl.innerHTML = items.map(r => `
+      <div class="item">
+        <span>${r.name}<div class="meta">${(r.sizeBytes/1024/1024).toFixed(0)} MB</div></span>
+        <span>
+          <button class="small ghost" onclick="window.open('${r.url}','_blank')">فتح</button>
+          <button class="small danger" onclick="deleteRecording('${slot}','${encodeURIComponent(r.name)}')">حذف</button>
+        </span>
+      </div>`).join('');
+  }catch(e){
+    listEl.innerHTML = `<div class="empty">${e.message}</div>`;
+  }
+}
+async function deleteRecording(slot, name){
+  try{
+    await apiCall(`/api/recordings/${encodeURIComponent(slot)}/${name}`, { method: 'DELETE' });
+    refreshRecordings();
+  }catch(e){ showResult(false, e.message); }
+}
+
+async function refreshStorage(){
+  const textEl = document.getElementById('storageText');
+  const fillEl = document.getElementById('storageFill');
+  if (!getKey()){ textEl.textContent = 'حط مفتاح الـ API أول.'; return; }
+  textEl.textContent = 'جاري التحميل...';
+  try{
+    const { data } = await apiCall('/api/storage/usage');
+    const usedGB = (data.usedBytes / 1024 / 1024 / 1024).toFixed(2);
+    if (data.quotaBytes){
+      const quotaGB = (data.quotaBytes / 1024 / 1024 / 1024).toFixed(0);
+      const pct = Math.min(100, (data.usedBytes / data.quotaBytes) * 100);
+      textEl.textContent = `${usedGB} GB من ${quotaGB} GB`;
+      fillEl.style.width = pct + '%';
+    } else {
+      // Internet Archive ما يفرض حد أقصى — نعرض الإجمالي بس بدون شريط نسبة مضلّل
+      textEl.textContent = `${usedGB} GB (بدون حد أقصى — Internet Archive)`;
+      fillEl.style.width = '100%';
+    }
+  }catch(e){ textEl.textContent = e.message; }
+}
+
+checkActionStatus();
+refreshLiveStatus();
+setInterval(checkActionStatus, 20000);
+</script>
+</body>
+</html>
