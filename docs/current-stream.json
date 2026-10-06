@@ -1,4 +1,7 @@
 {
   "panelUrl": "https://asn-disposition-commons-thunder.trycloudflare.com",
-  "startedAt": "2026-10-06T22:15:32Z"
+  "startedAt": "2026-10-06T22:15:32Z",
+  "multiQuality": {
+    "Messi": "https://you-rouge-jan-sunday.trycloudflare.com/master.m3u8"
+  }
 }
