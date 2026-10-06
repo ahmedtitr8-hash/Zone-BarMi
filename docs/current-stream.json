@@ -1,4 +1,7 @@
 {
   "panelUrl": "https://significant-etc-minister-prefer.trycloudflare.com",
-  "startedAt": "2026-10-06T22:30:31Z"
+  "startedAt": "2026-10-06T22:30:31Z",
+  "multiQuality": {
+    "720": "https://data-stays-seeds-sagem.trycloudflare.com/master.m3u8"
+  }
 }
