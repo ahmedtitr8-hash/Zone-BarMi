@@ -1,4 +1,7 @@
 {
   "panelUrl": "https://gospel-powers-comm-fly.trycloudflare.com",
-  "startedAt": "2026-10-08T09:35:19Z"
+  "startedAt": "2026-10-08T09:35:19Z",
+  "multiQuality": {
+    "720": "https://gospel-powers-comm-fly.trycloudflare.com/live/720/master.m3u8"
+  }
 }
