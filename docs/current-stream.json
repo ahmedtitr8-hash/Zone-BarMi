@@ -1,4 +1,7 @@
 {
   "panelUrl": "https://computational-visits-concord-marsh.trycloudflare.com",
-  "startedAt": "2026-10-09T12:23:43Z"
+  "startedAt": "2026-10-09T12:23:43Z",
+  "multiQuality": {
+    "720": "https://computational-visits-concord-marsh.trycloudflare.com/live/720/master.m3u8"
+  }
 }
