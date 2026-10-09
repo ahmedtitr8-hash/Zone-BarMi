@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/relay", "destination": "/api/relay" },
+    { "source": "/live/:rest*", "destination": "/api/relay?p=live/:rest*" }
+  ]
+}
