@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>الروابط الثابتة (الوضع التلقائي)</title>
+<style>
+  :root{--bg:#0f1115;--card:#181b22;--fg:#e8eaf0;--mut:#9aa3b2;--ok:#3ecf8e;--bad:#ff6b6b;--bd:#2a2f3a;--ac:#5b8cff}
+  @media (prefers-color-scheme:light){:root{--bg:#f5f6f8;--card:#fff;--fg:#14171f;--mut:#5b6472;--bd:#dfe3ea}}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;padding:16px;max-width:720px;margin-inline:auto}
+  h1{font-size:19px;margin:4px 0 14px}.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+  label{display:block;color:var(--mut);font-size:13px;margin:8px 0 4px}
+  input[type=text],input[type=password]{width:100%;padding:10px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--fg);font:inherit;direction:ltr;text-align:left}
+  button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;cursor:pointer}button.sec{background:transparent;border:1px solid var(--bd);color:var(--fg)}button.del{background:transparent;border:1px solid var(--bad);color:var(--bad)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.mut{color:var(--mut);font-size:13px}
+  .item{border-top:1px solid var(--bd);padding:10px 0}.item:first-child{border-top:0}.u{direction:ltr;text-align:left;word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--mut)}
+  #msg{min-height:22px;margin:6px 0}.ok{color:var(--ok)}.bad{color:var(--bad)}
+</style>
+</head>
+<body>
+<h1>🔗 الروابط الثابتة (الوضع التلقائي)</h1>
+<div class="card mut">الأسماء اللي تكتبها بالممرر (/live) وعمليات الفك تنشأ لها روابط ثابتة تلقائيًا. هنا للروابط اللي بدون اسم (<b>/mh</b> و<b>/relay</b> و<b>/u</b>): الصق رابط الممرر الكامل واختر اسمًا.</div>
+<div class="card">
+  <label>مفتاح API</label><input id="key" type="password" placeholder="نفس API_KEY">
+  <label>اسم الرابط الثابت (إنجليزي/أرقام/-/_)</label><input id="name" type="text" placeholder="match1">
+  <label>رابط الممرر الكامل (من نفق هذا الأكشن)</label><input id="link" type="text" placeholder="https://xxxx.trycloudflare.com/mh/....../master.m3u8">
+  <label class="row" style="margin-top:10px"><input type="checkbox" id="consent"> <span>أوافق ينكتب علنًا حتى لو فيه <b>؟توكن</b> (الصفحة عامة)</span></label>
+  <div class="row" style="margin-top:10px"><button id="add">إنشاء / تحديث</button><button class="sec" id="reload">تحديث القائمة</button></div>
+  <div id="msg"></div>
+</div>
+<div class="card"><div id="list" class="mut">…</div></div>
+<script>
+const $=id=>document.getElementById(id);
+$('key').value=localStorage.getItem('zbm_api_key')||'';
+$('key').addEventListener('change',()=>localStorage.setItem('zbm_api_key',$('key').value));
+const say=(t,c)=>{$('msg').textContent=t;$('msg').className=c||''};
+async function panelUrl(){
+  const r=await fetch('./current-stream.json?_='+Date.now(),{cache:'no-store'});
+  if(!r.ok) throw new Error('الأكشن مو شغّال');
+  return (await r.json()).panelUrl;
+}
+async function call(path,opt={}){
+  const key=$('key').value.trim(); if(!key) throw new Error('حط مفتاح الـ API أول');
+  const base=await panelUrl();
+  const res=await fetch(base+path,{...opt,headers:{'x-api-key':key,'content-type':'application/json',...(opt.headers||{})}});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||('خطأ '+res.status));
+  return data;
+}
+async function load(){
+  try{
+    const d=await call('/api/pointer/list');
+    if(!d.items.length){$('list').textContent='ما فيه روابط ثابتة لسا.';return}
+    $('list').innerHTML='';
+    d.items.forEach(it=>{
+      const div=document.createElement('div');div.className='item';
+      div.innerHTML='<div class="row"><b></b><span class="mut"></span></div><div class="u"></div><div class="row" style="margin-top:8px"></div>';
+      div.querySelector('b').textContent=it.name;
+      div.querySelector('.mut').textContent=({relay:'ممرر مسمّى',decode:'فك',manual:'يدوي',import:'منقول'})[it.src]||it.src;
+      div.querySelector('.u').textContent=it.stable;
+      const row=div.lastChild;
+      const c=document.createElement('button');c.className='sec';c.textContent='نسخ الرابط';c.onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(it.stable);say('اننسخ: '+it.stable,'ok')};
+      const x=document.createElement('button');x.className='del';x.textContent='حذف';x.onclick=async()=>{if(!confirm('حذف '+it.name+'؟'))return;try{await call('/api/pointer/'+encodeURIComponent(it.name),{method:'DELETE'});load()}catch(e){say(e.message,'bad')}};
+      row.append(c,x);$('list').append(div);
+    });
+  }catch(e){$('list').textContent=e.message}
+}
+$('add').onclick=async()=>{
+  try{
+    const d=await call('/api/pointer/set',{method:'POST',body:JSON.stringify({name:$('name').value.trim(),link:$('link').value.trim(),allowQuery:$('consent').checked})});
+    say('تم ✅ الرابط الثابت (يشتغل بعد ما تتحدث الصفحة ~دقيقة): '+d.stable,'ok');load();
+  }catch(e){say(e.message,'bad')}
+};
+$('reload').onclick=load;load();
+</script>
+</body>
+</html>
