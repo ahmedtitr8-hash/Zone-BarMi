@@ -1,0 +1,78 @@
+name: Test CDN Reach
+
+# اختبار فقط — ما يلمس أي شي ثاني. يجرب من جهاز GitHub: هل المصدر يمر عبر طرق CDN مختلفة؟
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'رابط الـ MPD الكامل'
+        required: true
+      cf_ip:
+        description: 'IP كلاود فرونت من جوالك (اختياري)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        env:
+          URL: ${{ inputs.url }}
+          CF_IP: ${{ inputs.cf_ip }}
+        run: |
+          echo "::add-mask::$URL"
+          HOST=$(echo "$URL" | sed -E 's#^https?://([^/]+).*#\1#')
+          UA='Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
+          echo "المصدر: $HOST"
+          echo "== موقع الجهاز =="
+          curl -s --max-time 8 https://ipinfo.io/json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('city'), d.get('country'), '|', d.get('org'))" || true
+          : > /tmp/ok.txt
+          probe() {
+            local label="$1"; shift
+            local H code srv
+            H=$(mktemp)
+            code=$(curl -s -m 20 -o /dev/null -D "$H" -w '%{http_code}' -H "User-Agent: $UA" "$@" "$URL" || true)
+            srv=$(grep -iE '^(server|x-cache):' "$H" | tr -d '\r' | tr '\n' ' ')
+            echo "[$label] HTTP $code  $srv"
+            if [ "$code" = "200" ]; then echo "$label" >> /tmp/ok.txt; fi
+            return 0
+          }
+          echo
+          echo "== 1) الوضع العادي (DNS الأكشن) =="
+          probe "عادي"
+          echo
+          echo "== 2) البحث عن طريق CloudFront (DNS يتظاهر بأنه من السعودية) =="
+          IPS=$(python3 - "$HOST" <<'PY'
+          import sys, json, urllib.request
+          host = sys.argv[1]
+          subnets = ["188.50.0.0/24","178.87.0.0/24","37.217.0.0/24","46.153.0.0/24","2.88.0.0/24","95.186.0.0/24"]
+          seen = []
+          for s in subnets:
+              try:
+                  r = json.load(urllib.request.urlopen("https://dns.google/resolve?name=%s&type=A&edns_client_subnet=%s" % (host, s), timeout=10))
+              except Exception:
+                  continue
+              chain = [a["data"] for a in r.get("Answer", [])]
+              print(s, "->", " > ".join(chain), file=sys.stderr)
+              for a in r.get("Answer", []):
+                  if a.get("type") == 1 and a["data"] not in seen:
+                      seen.append(a["data"])
+          print("\n".join(seen))
+          PY
+          )
+          if [ -n "$CF_IP" ]; then IPS="$CF_IP"$'\n'"$IPS"; fi
+          echo
+          echo "== 3) إجبار الاتصال على كل IP =="
+          for ip in $(echo "$IPS" | awk 'NF' | awk '!s[$0]++' | head -8); do
+            probe "IP $ip" --resolve "$HOST:443:$ip"
+          done
+          echo
+          echo "== الخلاصة =="
+          if [ -s /tmp/ok.txt ]; then
+            echo "✅ نجح (200):"; cat /tmp/ok.txt
+          else
+            echo "❌ ما نجح أي طريق من جهاز الأكشن"
+          fi
