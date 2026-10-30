@@ -1,0 +1,85 @@
+name: Test Hop (جوالك)
+
+# اختبار فقط، ملف واحد ما يعتمد على أي ملف ثاني بالمشروع.
+# يجرّب: هل المصدر يشتغل لما الطلب يمر من وسيط جوالك (hop-server.js) عبر النفق؟
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'رابط الـ MPD الأصلي من المصدر'
+        required: true
+      hop_url:
+        description: 'رابط نفق جوالك (https://xxxx.trycloudflare.com)'
+        required: true
+      hop_key:
+        description: 'HOP_KEY اللي شغّلت فيه hop-server.js'
+        required: true
+      ref:
+        description: 'Referer للمصدر (اختياري)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        env:
+          URL_TEST: ${{ inputs.url }}
+          HOP_URL: ${{ inputs.hop_url }}
+          HOP_KEY: ${{ inputs.hop_key }}
+          REF: ${{ inputs.ref }}
+        run: |
+          echo "::add-mask::$URL_TEST"
+          echo "::add-mask::$HOP_KEY"
+          python3 - <<'PY'
+          import os, sys, json, base64, urllib.parse, urllib.request, urllib.error, re
+          from xml.etree import ElementTree as ET
+          url=os.environ['URL_TEST']; hop=os.environ['HOP_URL'].rstrip('/'); key=os.environ['HOP_KEY']; ref=os.environ.get('REF','').strip()
+          host=urllib.parse.urlparse(url).netloc
+          UA='Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
+          hdr={'User-Agent':UA,'Referer':ref or f'https://{host}/'}
+          if ref: hdr['Origin']=urllib.parse.urlparse(ref).scheme+'://'+urllib.parse.urlparse(ref).netloc
+          def get(u, via_hop):
+              if via_hop:
+                  r=urllib.request.Request(f"{hop}/raw?u={urllib.parse.quote(u,safe='')}", headers={'x-hop-key':key,'x-hop-h':base64.urlsafe_b64encode(json.dumps(hdr).encode()).decode().rstrip('='),'User-Agent':'curl/8'})
+              else:
+                  r=urllib.request.Request(u, headers=hdr)
+              try:
+                  with urllib.request.urlopen(r, timeout=25) as x: return x.status, x.read(), dict(x.headers)
+              except urllib.error.HTTPError as e: return e.code, e.read(), dict(e.headers)
+              except Exception as e: return 0, str(e).encode(), {}
+          print('IP الأكشن:', get('https://ifconfig.me/ip',False)[1].decode().strip() if True else '')
+          print('\n== 1) مباشر من الأكشن (للمقارنة) ==')
+          s,b,h=get(url,False); print('HTTP',s, b[:80].decode('utf8','ignore').replace('\n',' '))
+          print('\n== 2) عبر وسيط جوالك (الـ MPD) ==')
+          s,b,h=get(url,True)
+          txt=b.decode('utf8','ignore')
+          if h.get('x-hop-denied'): print('❌ الوسيط رفض: HOP_KEY غلط')
+          elif s==0: print('❌ ما وصلت للوسيط:', txt[:120], '\n   (النفق مقطوع؟ hop-server شغّال؟ الرابط صحيح؟)')
+          elif s==200 and '<MPD' in txt: print('✅ HTTP 200 — MPD سليم عبر الوسيط')
+          else: print('❌ HTTP',s,'—',txt[:120].replace('\n',' '))
+          mpd_ok = s==200 and '<MPD' in txt
+          print('\n== 3) أول مقطع (init) عبر الوسيط ==')
+          if not mpd_ok: print('⏭️ تخطّي (الـ MPD ما جاء)')
+          else:
+              try:
+                  ns={'m':'urn:mpeg:dash:schema:mpd:2011'}; root=ET.fromstring(txt)
+                  base=url; b0=root.find('m:Period/m:BaseURL',ns)
+                  if b0 is not None and b0.text: base=urllib.parse.urljoin(url,b0.text.strip())
+                  done=False
+                  for aset in root.iter('{urn:mpeg:dash:schema:mpd:2011}AdaptationSet'):
+                      st=aset.find('m:SegmentTemplate',ns); rep=aset.find('m:Representation',ns)
+                      if st is None or rep is None or not st.get('initialization'): continue
+                      init=st.get('initialization').replace('$RepresentationID$',rep.get('id',''))
+                      iu=urllib.parse.urljoin(base,init)
+                      s2,b2,h2=get(iu,True)
+                      print(('✅' if s2==200 and len(b2)>100 else '❌'),'HTTP',s2,'—',len(b2),'بايت', iu.split('?')[0][-60:])
+                      done=True; break
+                  if not done: print('⏭️ ما لقيت init بالـ MPD (ما يضر)')
+              except Exception as e: print('⏭️ ما قدرت أحلل الـ MPD:',e)
+          print('\n== الخلاصة ==')
+          print('✅ الوسيط يشتغل: جاب المصدر من IP جوالك' if mpd_ok else '❌ ما نجح — شوف السبب فوق')
+          PY
