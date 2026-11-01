@@ -1,0 +1,129 @@
+name: App Lab
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-lab
+  cancel-in-progress: false
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xdotool xvfb x11vnc novnc websockify openssl python3-venv libpulse0 libxkbfile1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0
+          python3 -m venv "$HOME/mitm"
+          "$HOME/mitm/bin/pip" install -q mitmproxy
+          (cd applab && npm install --no-audit --no-fund)
+          curl -sSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+          mkdir -p /tmp/lab/uploads
+          echo '{"stage":"starting","detail":""}' > /tmp/lab/state.json
+
+      - name: Start screen, proxy and server
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          nohup Xvfb :99 -screen 0 720x1280x24 > /tmp/lab/xvfb.log 2>&1 &
+          sleep 2
+          VNCPASS=$(openssl rand -hex 4)
+          echo "VNCPASS=$VNCPASS" >> $GITHUB_ENV
+          x11vnc -storepasswd "$VNCPASS" /tmp/lab/vncpass
+          nohup x11vnc -display :99 -rfbauth /tmp/lab/vncpass -forever -shared -rfbport 5900 -localhost -noxdamage -nocursor > /tmp/lab/x11vnc.log 2>&1 &
+          nohup websockify --web /usr/share/novnc 6080 localhost:5900 > /tmp/lab/websockify.log 2>&1 &
+          nohup "$HOME/mitm/bin/mitmdump" --listen-host 127.0.0.1 --listen-port 8080 \
+            --set ssl_insecure=true --set stream_large_bodies=3m \
+            --ignore-hosts '^(.+\.)?(google|googleapis|gstatic|gvt1|gvt2|android)\.com:443$' \
+            -s applab/capture.py > /tmp/lab/mitm.log 2>&1 &
+          for i in $(seq 1 30); do [ -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ] && break; sleep 1; done
+          cd applab
+          VNCPASS="$VNCPASS" nohup node server.js > /tmp/lab/server.log 2>&1 &
+          sleep 2
+          curl -s http://127.0.0.1:3100/health
+
+      - name: Start tunnels
+        run: |
+          nohup ./cloudflared tunnel --url http://localhost:3100 > cf-api.log 2>&1 &
+          nohup ./cloudflared tunnel --url http://localhost:6080 > cf-screen.log 2>&1 &
+          for i in $(seq 1 40); do
+            API=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' cf-api.log | head -n1)
+            SCR=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' cf-screen.log | head -n1)
+            if [ -n "$API" ] && [ -n "$SCR" ]; then
+              echo "LAB_API=$API" >> $GITHUB_ENV
+              echo "LAB_SCREEN=$SCR" >> $GITHUB_ENV
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Publish pointer and notify
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          mkdir -p docs
+          cat > docs/lab-stream.json << EOF2
+          {
+            "panelUrl": "${LAB_API}",
+            "screenUrl": "${LAB_SCREEN}",
+            "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF2
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/lab-stream.json
+          git commit -m "تحديث رابط App Lab [skip ci]" || true
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && break
+            sleep 3
+          done
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" \
+            --data-urlencode $'text=📱 App Lab يتجهز (٣-٥ دقايق). افتح الصفحة وتبويب (جهاز) وانتظر يصير جاهز.\nhttps://ahmedtitr8-hash.github.io/Zone-BarMi/'
+
+      - name: Android emulator and app lab
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          DISPLAY: ':99'
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-boot-timeout: 900
+          emulator-options: -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect
+          script: bash applab/run.sh
+
+      - name: Notify end
+        if: always()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" --data-urlencode "text=⏹ انتهت جلسة App Lab." || true
