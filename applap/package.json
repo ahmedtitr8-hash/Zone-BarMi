@@ -1,9 +1,0 @@
-{
-  "name": "applab",
-  "private": true,
-  "version": "1.0.0",
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.19.2"
-  }
-}
