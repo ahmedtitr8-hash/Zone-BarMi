@@ -181,7 +181,7 @@ const UPSTREAMS = (() => {
 })();
 const MOBILE_UA = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36';
 const hdrVariants = (u) => [
-  { 'User-Agent': MOBILE_UA, 'Referer': u.r, 'Origin': new URL(u.r).origin },
+  { 'User-Agent': MOBILE_UA, 'Referer': u.r, 'Origin': u.og || new URL(u.r).origin },
   { 'User-Agent': MOBILE_UA, 'Referer': u.o + '/', 'Origin': u.o },
   { 'User-Agent': MOBILE_UA },
 ];
@@ -221,7 +221,7 @@ async function passThrough(req, reqUrl, path) {
   const range = req.headers.get('range');
   const picks = (globalThis.__upPick = globalThis.__upPick || new Map());
   const chKey = (gen ? gen.host + '/' : '') + path.split('/').slice(0, 2).join('/');   // live/<قناة>
-  const regs = globalThis.__relayUps ? [...globalThis.__relayUps].map(([o, r]) => ({ o, r })) : [];   // مصادر سجّلتها اللوحة (مع Referer كل مصدر)
+  const regs = globalThis.__relayUps ? [...globalThis.__relayUps].map(([o, r]) => ({ o, r, og: (globalThis.__relayUpsOrigin && globalThis.__relayUpsOrigin.get(o)) || '' })) : [];   // مصادر سجّلتها اللوحة (مع Referer كل مصدر)
   const all = [...regs, ...UPSTREAMS.filter((u) => !regs.some((x) => x.o === u.o))];
   const known = (o) => all.find((u) => u.o === o) || { o, r: o + '/' };
   const cands = gen ? [known(gen.sch + '://' + gen.host)] : alias && alias.o ? [known(alias.o)] : all.slice();
