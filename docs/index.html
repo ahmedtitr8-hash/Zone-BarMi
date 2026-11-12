@@ -395,6 +395,8 @@
       <summary class="hint" style="cursor:pointer">خيارات متقدمة (ما تحتاجها عادةً)</summary>
       <label class="f">Referer — معبّى تلقائيًا بالقيمة اللي اشتغلت معك، لا تغيّره</label>
       <input id="rlRef" dir="ltr" value="https://live.xn----zmcaegc7cl3msazv.com/">
+      <label class="f">Origin — اختياري، لو تركته فاضي ينأخذ من الـ Referer</label>
+      <input id="rlOrigin" dir="ltr" placeholder="https://live.example.com">
     </details>
 
     <button onclick="rlCreate(this)">إنشاء الرابط</button>
@@ -675,6 +677,8 @@ const rlBaseInput = document.getElementById('rlBase');
 rlBaseInput.value = localStorage.getItem('zbm_rl_base') || '';
 const rlRefInput = document.getElementById('rlRef');
 rlRefInput.value = localStorage.getItem('zbm_rl_ref') || rlRefInput.value;
+const rlOriginInput = document.getElementById('rlOrigin');
+rlOriginInput.value = localStorage.getItem('zbm_rl_origin') || '';
 document.getElementById('rlPw').value = localStorage.getItem('zbm_rl_pw') || '';
 const rlHostSel = document.getElementById('rlHost');
 rlHostSel.value = ['gh', 'short'].includes(localStorage.getItem('zbm_rl_host')) ? localStorage.getItem('zbm_rl_host') : 'vercel';
@@ -930,6 +934,7 @@ async function rlCreate(btn){
   if (!/^https?:\/\/\S+$/i.test(url)) return showResult(false, 'حط رابط المصدر أول (يبدأ بـ https://)');
   if (ref && !/^https?:\/\/\S+$/i.test(ref)) return showResult(false, 'الـ Referer لازم رابط كامل يبدأ بـ https://');
   localStorage.setItem('zbm_rl_ref', ref);
+  localStorage.setItem('zbm_rl_origin', rlOriginInput.value.trim());
   const keys = document.getElementById('rlKeys').value.split(/[\r\n,;]+/).map(x => x.trim()).filter(Boolean);
   const isMpd = keys.length > 0 || /\.mpd(\?|$)/i.test(url);
   let base;
@@ -974,7 +979,7 @@ async function rlCreate(btn){
   } else if (rlHostSel.value !== 'vercel') {
     // تمرير: سجّل المصدر مع الـReferer على السيرفر، والرابط = نفس المسار بدومينك فقط
     try {
-      await apiCall('/api/relay/upstream', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ origin: u.origin, ref }) });
+      await apiCall('/api/relay/upstream', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ origin: u.origin, ref, hdrOrigin: rlOriginInput.value.trim() }) });
     } catch (e) { return showResult(false, 'تعذر تسجيل المصدر: ' + e.message); }
     link = base + (u.pathname.startsWith('/live/') ? '' : '/u/' + u.host) + u.pathname + u.search;
   } else {
