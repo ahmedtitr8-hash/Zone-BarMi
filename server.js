@@ -6,6 +6,7 @@ const path = require('path');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const mpdLib = require('./mpd');
+const cbcsLib = require('./cbcs'); // فك تشفير cbcs (ffmpeg ما يدعمه)
 const hlsLib = require('./hls');
 const mirrorLib = require('./mirror');
 const multer = require('multer');
@@ -1636,8 +1637,44 @@ app.get('/internal/mpd/:sid/:file', async (req, res) => {
   if (trackId === null) return res.status(404).end();
   try {
     const { text, finalUrl } = await mpdLib.fetchMpd(session.url, session.headers);
-    const out = mpdLib.buildTrackMpd(text, finalUrl, trackId);
+    let out = mpdLib.buildTrackMpd(text, finalUrl, trackId);
+    // cbcs: ffmpeg ما يفكه. نمرّر مقاطع هالمسار عبر /internal/cbcs (نفك فيها بالـ Node) ونشيل ContentProtection
+    if (/value\s*=\s*"cbcs"/i.test(text)) {
+      const key = session.all
+        ? (session.sets.find((x) => String(x.idx) === String(trackId)) || {}).key
+        : session.keyOf && session.keyOf[kind];
+      const bm = out.match(/<BaseURL>([^<]*)<\/BaseURL>/);
+      if (key && bm) {
+        session.cbcs = session.cbcs || {};
+        const st = session.cbcs[kind] || (session.cbcs[kind] = { enc: null });
+        st.base = bm[1].replace(/&amp;/g, '&');
+        st.key = key;
+        out = out
+          .replace(/<ContentProtection\b[^>]*\/>/g, '')
+          .replace(/<ContentProtection\b[^>]*(?<!\/)>[\s\S]*?<\/ContentProtection>/g, '')
+          .replace(bm[0], `<BaseURL>http://127.0.0.1:${PORT}/internal/cbcs/${session.id}/${kind}/</BaseURL>`);
+      }
+    }
     res.set({ 'Content-Type': 'application/dash+xml', 'Cache-Control': 'no-store' }).send(out);
+  } catch (err) {
+    res.status(502).send(String(err.message || err));
+  }
+});
+
+// مقاطع cbcs: يجلب المقطع من المصدر، يفكه (init يتنظّف، المقاطع تنفك)، ويرجّعه لـ ffmpeg نظيف
+app.get('/internal/cbcs/:sid/:kind/*', async (req, res) => {
+  const session = mpdSessions.get(req.params.sid);
+  const st = session && session.cbcs && session.cbcs[req.params.kind];
+  if (!st) return res.status(404).end();
+  try {
+    const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    const url = new URL(req.params[0] + q, st.base).toString();
+    const r = await fetch(url, { headers: session.headers, redirect: 'follow', signal: AbortSignal.timeout(20000) });
+    if (!r.ok) return res.status(r.status).send(`المصدر رجّع ${r.status}`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    const done = cbcsLib.processSegment(buf, st.key, st.enc);
+    if (done.enc) st.enc = done.enc; // نمط التشفير من الـ init (للمقاطع اللي بعده)
+    res.set({ 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store' }).send(done.out);
   } catch (err) {
     res.status(502).send(String(err.message || err));
   }
