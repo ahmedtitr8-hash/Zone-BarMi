@@ -1009,7 +1009,7 @@ async function rlProbe(url){
     const r = await fetch(url, { cache: 'no-store' });
     const b = r.ok ? new Uint8Array(await r.arrayBuffer()) : new Uint8Array();
     const err = r.ok ? '' : (await r.text().catch(() => '')).slice(0, 140);
-    return { ok: r.ok, status: r.status, ms: Math.round(performance.now() - t0), kb: Math.round(b.length / 1024), b, err, dec: r.headers.get('X-Decrypted') };
+    return { ok: r.ok, status: r.status, ms: Math.round(performance.now() - t0), kb: Math.round(b.length / 1024), b, err, dec: r.headers.get('X-Decrypted'), info: r.headers.get('X-Enc-Info') || '' };
   } catch (e) { return { ok: false, status: 0, ms: Math.round(performance.now() - t0), kb: 0, b: new Uint8Array(), err: e.message }; }
 }
 async function rlDeepTest(link, master){
@@ -1037,7 +1037,7 @@ async function rlDeepTest(link, master){
       if (!seg.ok) out += ` | ❌ مقطع ${seg.status} ${seg.err}`;
       else {
         const slow = seg.ms / 1000 > dur;
-        out += ` | مقطع ${seg.kb}KB في ${seg.ms}ms (مدته ${dur}s)${slow ? ' ⚠️ أبطأ من البث!' : ''}${seg.dec === '0' ? ' ⚠️ ما انفك تشفيره' : ''}${seg.kb > 4300 ? ' ⚠️ قرب حد 4.5MB' : ''}`;
+        out += ` | مقطع ${seg.kb}KB في ${seg.ms}ms (مدته ${dur}s)${slow ? ' ⚠️ أبطأ من البث!' : ''}${seg.dec === '0' ? ' ⚠️ ما انفك تشفيره' : ''}${seg.info ? ' [' + seg.info + ']' : ''}${seg.kb > 4300 ? ' ⚠️ قرب حد 4.5MB' : ''}`;
       }
     }
   }
