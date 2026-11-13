@@ -245,6 +245,7 @@ function decryptSegment(src, keyHex, enc) {
   const buf = Buffer.from(src);
   const key = Buffer.from(keyHex, 'hex');
   let did = false;
+  const st = { n: 0, ent: 0, sub: 0, miss: 0, grp: 0 }; // تشخيص: عدد العيّنات / مدخلات senc / عيّنات بـsubsamples / عيّنات بلا مدخل / وجود sample groups
   for (const moof of boxes(buf, 0, buf.length)) {
     if (moof.type !== 'moof') continue;
     for (const traf of boxes(buf, moof.body, moof.end)) {
@@ -263,6 +264,8 @@ function decryptSegment(src, keyHex, enc) {
       if (!senc) continue; // مقطع بدون تشفير (أو صيغة غير مدعومة، يُكشف بالهيدر X-Decrypted)
       const isCbcs = !!(enc && enc.s === 'cbcs');
       const entries = parseSenc(buf, senc, isCbcs ? enc.z : undefined);
+      st.ent += entries.length; st.sub += entries.filter((x) => x.subs.length).length;
+      for (const c of boxes(buf, traf.body, traf.end)) if (c.type === 'sgpd' || c.type === 'sbgp') st.grp++;
       let si = 0, prevEnd = baseOff; did = true;
       for (const tr of truns) {
         const fl = buf.readUInt32BE(tr.body) & 0xffffff;
@@ -276,6 +279,7 @@ function decryptSegment(src, keyHex, enc) {
           if (fl & 0x200) { size = buf.readUInt32BE(p); p += 4; }
           if (fl & 0x400) p += 4; if (fl & 0x800) p += 4;
           const e = entries[si++];
+          st.n++; if (!e) st.miss++;
           if (e && isCbcs) cbcsSample(buf, pos, size, e, key, enc);
           else if (e) {
             const iv16 = Buffer.alloc(16); e.iv.copy(iv16);
@@ -298,6 +302,7 @@ function decryptSegment(src, keyHex, enc) {
     stripEncInfo(buf, moof.body, moof.end); // seig/sbgp/sgpd/pssh المتبقية
   }
   buf.did = did;
+  buf.info = `n=${st.n} senc=${st.ent} sub=${st.sub} miss=${st.miss} grp=${st.grp}` + (enc && enc.s === 'cbcs' ? ` pat=${enc.c}:${enc.p} iv=${enc.z}${enc.v ? 'c' : ''}` : '');
   return buf;
 }
 
@@ -408,7 +413,7 @@ async function handle(req, res) {
       let out = buf;
       if (tok.i) { const c = cleanInit(buf); if (c.scheme && c.scheme !== 'cenc' && c.scheme !== 'cbcs') throw new Error(`نظام التشفير ${c.scheme} غير مدعوم (المدعوم cenc و cbcs)`); out = c.buf; }
       else if (tok.k) out = decryptSegment(buf, tok.k, tok.e);
-      return send(res, 200, out, { 'Content-Type': 'video/mp4', 'Content-Length': out.length, 'Cache-Control': 'public, max-age=30, s-maxage=30', 'X-Decrypted': tok.i ? 'init' : out.did ? '1' : '0', 'Access-Control-Expose-Headers': 'X-Decrypted' });
+      return send(res, 200, out, { 'Content-Type': 'video/mp4', 'Content-Length': out.length, 'Cache-Control': 'public, max-age=30, s-maxage=30', 'X-Decrypted': tok.i ? 'init' : out.did ? '1' : '0', 'X-Enc-Info': out.info || '', 'Access-Control-Expose-Headers': 'X-Decrypted, X-Enc-Info' });
     } catch (e) { return fail(res, e.status || 502, String(e.message || e)); }
   }
 
