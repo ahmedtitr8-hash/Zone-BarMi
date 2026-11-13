@@ -241,11 +241,43 @@ function cbcsSample(buf, pos, size, e, key, enc) {
   for (const [clr, encLen] of e.subs) { q += clr; cbcsRange(buf, q, encLen, key, iv16, enc.c, enc.p); q += encLen; }
 }
 
+// sample groups من نوع seig داخل traf: لكل عيّنة قد يتغيّر (مشفّرة؟ / النمط / الـIV الثابت). بدونها تُعامل كل العيّنات بإعدادات الـ init.
+function parseSeig(buf, traf) {
+  let groups = [], runs = [];
+  for (const c of boxes(buf, traf.body, traf.end)) {
+    if ((c.type !== 'sgpd' && c.type !== 'sbgp') || buf.toString('latin1', c.body + 4, c.body + 8) !== 'seig') continue;
+    const ver = buf[c.body]; let p = c.body + 8;
+    if (c.type === 'sgpd') {
+      let defLen = 0;
+      if (ver === 1) { defLen = buf.readUInt32BE(p); p += 4; } else if (ver >= 2) p += 4;
+      const cnt = buf.readUInt32BE(p); p += 4;
+      for (let i = 0; i < cnt && p + 20 <= c.end; i++) {
+        let len = defLen;
+        if (ver === 1 && !defLen) { len = buf.readUInt32BE(p); p += 4; }
+        const prot = buf[p + 2], ivs = buf[p + 3];
+        let cl = 0, civ = '';
+        if (prot === 1 && ivs === 0) { cl = buf[p + 20]; civ = buf.subarray(p + 21, p + 21 + cl).toString('hex'); }
+        groups.push({ c: buf[p + 1] >> 4, p: buf[p + 1] & 15, prot: prot === 1, v: civ });
+        p += ver === 1 ? len : 20 + (prot === 1 && ivs === 0 ? 1 + cl : 0);
+      }
+    } else {
+      if (ver === 1) p += 4;
+      const cnt = buf.readUInt32BE(p); p += 4;
+      for (let i = 0; i < cnt && p + 8 <= c.end; i++) { runs.push([buf.readUInt32BE(p), buf.readUInt32BE(p + 4)]); p += 8; }
+    }
+  }
+  return (si) => { // رقم العيّنة → إعدادات المجموعة (أو null = إعدادات الـ init)
+    let acc = 0;
+    for (const [n, idx] of runs) { if (si < acc + n) return idx > 0x10000 ? (groups[idx - 0x10001] || null) : null; acc += n; }
+    return null;
+  };
+}
+
 function decryptSegment(src, keyHex, enc) {
   const buf = Buffer.from(src);
   const key = Buffer.from(keyHex, 'hex');
   let did = false;
-  const st = { n: 0, ent: 0, sub: 0, miss: 0, grp: 0 }; // تشخيص: عدد العيّنات / مدخلات senc / عيّنات بـsubsamples / عيّنات بلا مدخل / وجود sample groups
+  const st = { n: 0, ent: 0, sub: 0, miss: 0, grp: 0, clr: 0 }; // تشخيص: عدد العيّنات / مدخلات senc / عيّنات بـsubsamples / عيّنات بلا مدخل / وجود sample groups
   for (const moof of boxes(buf, 0, buf.length)) {
     if (moof.type !== 'moof') continue;
     for (const traf of boxes(buf, moof.body, moof.end)) {
@@ -261,9 +293,11 @@ function decryptSegment(src, keyHex, enc) {
         else if (c.type === 'senc') senc = c;
         else if (c.type === 'uuid' && c.size >= c.hdr + 16 && buf.subarray(c.body, c.body + 16).toString('hex') === PIFF_SENC) senc = { ...c, body: c.body + 16 };
       }
-      if (!senc) continue; // مقطع بدون تشفير (أو صيغة غير مدعومة، يُكشف بالهيدر X-Decrypted)
       const isCbcs = !!(enc && enc.s === 'cbcs');
-      const entries = parseSenc(buf, senc, isCbcs ? enc.z : undefined);
+      if (!senc && !isCbcs) continue; // مقطع بدون تشفير (أو صيغة غير مدعومة، يُكشف بالهيدر X-Decrypted)
+      // cbcs بـ IV ثابت وبدون subsamples: كثير من الحزّامين يحذفون senc أو يخلّونه فاضي، والعيّنة كلها مشفّرة
+      const entries = senc ? parseSenc(buf, senc, isCbcs ? enc.z : undefined) : [];
+      const grpOf = isCbcs ? parseSeig(buf, traf) : () => null;
       st.ent += entries.length; st.sub += entries.filter((x) => x.subs.length).length;
       for (const c of boxes(buf, traf.body, traf.end)) if (c.type === 'sgpd' || c.type === 'sbgp') st.grp++;
       let si = 0, prevEnd = baseOff; did = true;
@@ -278,9 +312,13 @@ function decryptSegment(src, keyHex, enc) {
           let size = defSize;
           if (fl & 0x200) { size = buf.readUInt32BE(p); p += 4; }
           if (fl & 0x400) p += 4; if (fl & 0x800) p += 4;
-          const e = entries[si++];
+          let e = entries[si];
+          const g = grpOf(si); si++;
           st.n++; if (!e) st.miss++;
-          if (e && isCbcs) cbcsSample(buf, pos, size, e, key, enc);
+          if (isCbcs) {
+            if (g && !g.prot) st.clr++; // عيّنة غير مشفّرة حسب المجموعة
+            else cbcsSample(buf, pos, size, e || { iv: Buffer.alloc(0), subs: [] }, key, g ? { ...enc, c: g.c, p: g.p, v: g.v || enc.v } : enc);
+          }
           else if (e) {
             const iv16 = Buffer.alloc(16); e.iv.copy(iv16);
             const d = crypto.createDecipheriv('aes-128-ctr', key, iv16);
@@ -302,7 +340,7 @@ function decryptSegment(src, keyHex, enc) {
     stripEncInfo(buf, moof.body, moof.end); // seig/sbgp/sgpd/pssh المتبقية
   }
   buf.did = did;
-  buf.info = `n=${st.n} senc=${st.ent} sub=${st.sub} miss=${st.miss} grp=${st.grp}` + (enc && enc.s === 'cbcs' ? ` pat=${enc.c}:${enc.p} iv=${enc.z}${enc.v ? 'c' : ''}` : '');
+  buf.info = `n=${st.n} senc=${st.ent} sub=${st.sub} miss=${st.miss} grp=${st.grp} clr=${st.clr}` + (enc && enc.s === 'cbcs' ? ` pat=${enc.c}:${enc.p} iv=${enc.z}${enc.v ? 'c' : ''}` : '');
   return buf;
 }
 
